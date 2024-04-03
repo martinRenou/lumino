@@ -24,6 +24,8 @@ import {
   ImageRenderer
 } from '@lumino/datagrid';
 
+import { Debouncer } from '@lumino/polling';
+
 import { DockPanel, StackedPanel, Widget } from '@lumino/widgets';
 
 import { getKeyboardLayout } from '@lumino/keyboard';
@@ -128,6 +130,108 @@ class LargeDataModel extends DataModel {
     }
     return `(${row}, ${column})`;
   }
+}
+
+/**
+ * Return a promise that resolves in the given milliseconds with the given value.
+ */
+function sleep<T>(milliseconds: number = 0, value?: T): Promise<T | undefined> {
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      resolve(value);
+    }, milliseconds);
+  });
+}
+
+class AsyncDataModel extends DataModel {
+  constructor() {
+    super();
+
+    this._dataTable = [];
+
+    this._requestDebouncer = new Debouncer(this.notifyImpl.bind(this), 160);
+  }
+
+  rowCount(region: DataModel.RowRegion): number {
+    return region === 'body' ? 1_000 : 2;
+  }
+
+  columnCount(region: DataModel.ColumnRegion): number {
+    return region === 'body' ? 1_000 : 3;
+  }
+
+  async notifyDataAccess(notification: DataModel.DataRequestNotification) {
+    if (notification.region !== 'body') {
+      return;
+    }
+
+    void this._requestDebouncer.invoke(notification);
+  }
+
+  async notifyImpl(notification: DataModel.DataRequestNotification) {
+    await sleep(160);
+
+    for (
+      let column = notification.column;
+      column < notification.column + notification.columnSpan;
+      column++
+    ) {
+      if (this._dataTable[column] === undefined) {
+        this._dataTable[column] = [];
+      }
+
+      for (let row = notification.row; row < notification.row + notification.rowSpan; row++) {
+        this._dataTable[column][row] = this._data(
+          notification.region,
+          row,
+          column
+        );
+      }
+    }
+
+    this.emitChanged({
+      type: 'cells-changed',
+      region: 'body',
+      row: notification.row,
+      column: notification.column,
+      rowSpan: notification.rowSpan,
+      columnSpan: notification.columnSpan
+    });
+  }
+
+  data(region: DataModel.CellRegion, row: number, column: number): any {
+    // Only the body is async
+    if (region !== 'body') {
+      return this._data(region, row, column);
+    }
+
+    // If the data is not yet available, return a placeholder
+    if (
+      this._dataTable[column] === undefined ||
+      this._dataTable[column][row] === undefined
+    ) {
+      return '...';
+    }
+
+    // Otherwise return the value
+    return this._dataTable[column][row];
+  }
+
+  _data(region: DataModel.CellRegion, row: number, column: number): any {
+    if (region === 'row-header') {
+      return `R: ${row}, ${column}`;
+    }
+    if (region === 'column-header') {
+      return `C: ${row}, ${column}`;
+    }
+    if (region === 'corner-header') {
+      return `N: ${row}, ${column}`;
+    }
+    return `(${row}, ${column})`;
+  }
+
+  private _dataTable: number[][];
+  private _requestDebouncer: Debouncer;
 }
 
 class StreamingDataModel extends DataModel {
@@ -493,6 +597,7 @@ function main(): void {
   let model5 = new JSONModel(Data.cars);
   let model6 = new MutableJSONModel(Data.editable_test_data);
   let model7 = new MergedCellModel();
+  let model8 = new AsyncDataModel();
 
   let blueStripeStyle: DataGrid.Style = {
     ...DataGrid.defaultStyle,
@@ -597,10 +702,10 @@ function main(): void {
     // Other options:
     // width: '50px',
     // height: '50px',
-    //
+
     // width: '100%',
     // height: '50px',
-    //
+
     // For keeping the original size:
     // width: '',
     // height: '',
@@ -668,6 +773,9 @@ function main(): void {
     selectionMode: 'cell'
   });
 
+  let grid9 = new DataGrid();
+  grid9.dataModel = model8;
+
   let wrapper1 = createWrapper(grid1, 'Trillion Rows/Cols');
   let wrapper2 = createWrapper(grid2, 'Streaming Rows');
   let wrapper3 = createWrapper(grid3, 'Random Ticks 1');
@@ -676,6 +784,7 @@ function main(): void {
   let wrapper6 = createWrapper(grid6, 'Editable Grid');
   let wrapper7 = createWrapper(grid7, 'Copy');
   let wrapper8 = createWrapper(grid8, 'Merged Cells');
+  let wrapper9 = createWrapper(grid9, 'Async grid');
 
   let dock = new DockPanel();
   dock.id = 'dock';
@@ -688,6 +797,7 @@ function main(): void {
   dock.addWidget(wrapper6, { mode: 'tab-before', ref: wrapper1 });
   dock.addWidget(wrapper7, { mode: 'split-bottom', ref: wrapper6 });
   dock.addWidget(wrapper8, { mode: 'tab-after', ref: wrapper1 });
+  dock.addWidget(wrapper9, { mode: 'tab-after', ref: wrapper1 });
   dock.activateWidget(wrapper6);
 
   window.onresize = () => {

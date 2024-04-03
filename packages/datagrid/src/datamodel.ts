@@ -50,6 +50,17 @@ export abstract class DataModel {
   abstract columnCount(region: DataModel.ColumnRegion): number;
 
   /**
+   * Notify the model that a data access will happen soon on the
+   * model.
+   *
+   * @param _ - The information about the coming data request.
+   *
+   * #### Notes
+   * This method will be called once per draw call of a region.
+   */
+  async notifyDataAccess(_: DataModel.DataRequestNotification) {}
+
+  /**
    * Get the data value for a cell in the data model.
    *
    * @param region - The cell region of interest.
@@ -186,6 +197,14 @@ export namespace DataModel {
    * A singleton empty metadata object.
    */
   export const emptyMetadata: Metadata = Object.freeze({});
+
+  export type DataRequestNotification = {
+    readonly region: CellRegion;
+    readonly row: number;
+    readonly column: number;
+    readonly rowSpan: number;
+    readonly columnSpan: number;
+  };
 
   /**
    * An arguments object for the `changed` signal.

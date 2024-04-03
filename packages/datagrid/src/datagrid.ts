@@ -2087,6 +2087,17 @@ export class DataGrid extends Widget {
     r2: number,
     c2: number
   ): void {
+    // Notifify the data model that we are about to draw this region
+    if (this._dataModel !== null) {
+      this._dataModel.notifyDataAccess({
+        region: 'body',
+        row: r1,
+        column: c1,
+        rowSpan: r2 - r1 + 1,
+        columnSpan: c2 - c1 + 1
+      });
+    }
+
     let msg = new Private.PaintRequest(region, r1, c1, r2, c2);
     MessageLoop.postMessage(this._viewport, msg);
   }
